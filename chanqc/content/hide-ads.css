@@ -1,0 +1,107 @@
+/* ==========================================================================
+   Cosmetic Filtering (Ẩn phần tử quảng cáo bằng CSS)
+   Tự động chèn vào trang web để loại bỏ các khung chứa quảng cáo trống
+   Tự động ngừng ẩn nếu trang web nằm trong Whitelist hoặc tiện ích Tắt
+   ========================================================================== */
+
+/* Khi tiện ích bị tắt hoặc trang trong Whitelist -> Khôi phục hiển thị */
+html[data-adblock-disabled="true"] ins.adsbygoogle,
+html[data-adblock-disabled="true"] div[id^="google_ads_iframe"],
+html[data-adblock-disabled="true"] div[id*="_ad_container"],
+html[data-adblock-disabled="true"] iframe[id^="google_ads_frame"],
+html[data-adblock-disabled="true"] .ad-banner,
+html[data-adblock-disabled="true"] .ads-banner,
+html[data-adblock-disabled="true"] .ad-container,
+html[data-adblock-disabled="true"] .ads-container,
+html[data-adblock-disabled="true"] .advertisement,
+html[data-adblock-disabled="true"] .ad-wrapper,
+html[data-adblock-disabled="true"] .banner-ads,
+html[data-adblock-disabled="true"] .sticky-banner-left,
+html[data-adblock-disabled="true"] .sticky-banner-right,
+html[data-adblock-disabled="true"] div[id^="adm_"],
+html[data-adblock-disabled="true"] div[id^="eclick_"] {
+  display: revert !important;
+  visibility: visible !important;
+  height: auto !important;
+  width: auto !important;
+  opacity: 1 !important;
+  pointer-events: auto !important;
+}
+
+/* 1. Ẩn các thẻ chứa quảng cáo mạng Google AdSense & DFP */
+html:not([data-adblock-disabled="true"]) ins.adsbygoogle,
+html:not([data-adblock-disabled="true"]) div[id^="google_ads_iframe"],
+html:not([data-adblock-disabled="true"]) div[id*="_ad_container"],
+html:not([data-adblock-disabled="true"]) iframe[id^="google_ads_frame"],
+html:not([data-adblock-disabled="true"]) iframe[src*="doubleclick.net"],
+html:not([data-adblock-disabled="true"]) iframe[src*="googlesyndication.com"] {
+  display: none !important;
+  visibility: hidden !important;
+  height: 0 !important;
+  width: 0 !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+
+/* 2. Ẩn theo class và ID phổ biến của hệ thống quảng cáo */
+html:not([data-adblock-disabled="true"]) .ad-banner,
+html:not([data-adblock-disabled="true"]) .ads-banner,
+html:not([data-adblock-disabled="true"]) .ad-container,
+html:not([data-adblock-disabled="true"]) .ads-container,
+html:not([data-adblock-disabled="true"]) .advertisement,
+html:not([data-adblock-disabled="true"]) .ad-wrapper,
+html:not([data-adblock-disabled="true"]) .banner-ads,
+html:not([data-adblock-disabled="true"]) .sponsored-post,
+html:not([data-adblock-disabled="true"]) .sponsored-content,
+html:not([data-adblock-disabled="true"]) .native-ad,
+html:not([data-adblock-disabled="true"]) .ad-placement,
+html:not([data-adblock-disabled="true"]) .outbrain-ad,
+html:not([data-adblock-disabled="true"]) .taboola-ad,
+html:not([data-adblock-disabled="true"]) #ad-header,
+html:not([data-adblock-disabled="true"]) #ad-footer,
+html:not([data-adblock-disabled="true"]) #ad-sidebar,
+html:not([data-adblock-disabled="true"]) #sidebar-ads,
+html:not([data-adblock-disabled="true"]) #top-ad,
+html:not([data-adblock-disabled="true"]) #bottom-ad {
+  display: none !important;
+  visibility: hidden !important;
+  height: 0 !important;
+  width: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+/* 3. Ẩn quảng cáo trượt 2 bên mép (Sticky / Floating Side Banners) trên web tin tức */
+html:not([data-adblock-disabled="true"]) .sticky-banner-left,
+html:not([data-adblock-disabled="true"]) .sticky-banner-right,
+html:not([data-adblock-disabled="true"]) .floating-banner,
+html:not([data-adblock-disabled="true"]) .ads-floating,
+html:not([data-adblock-disabled="true"]) .banner-sticky,
+html:not([data-adblock-disabled="true"]) .fl-banner,
+html:not([data-adblock-disabled="true"]) div[class*="sticky-ad"],
+html:not([data-adblock-disabled="true"]) div[id*="sticky_banner"] {
+  display: none !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+}
+
+/* 4. Ẩn theo thuộc tính data thường dùng cho mạng lưới quảng cáo */
+html:not([data-adblock-disabled="true"]) [data-ad-unit],
+html:not([data-adblock-disabled="true"]) [data-ad-slot],
+html:not([data-adblock-disabled="true"]) [data-ad-client],
+html:not([data-adblock-disabled="true"]) [data-ad-format],
+html:not([data-adblock-disabled="true"]) [aria-label="advertisement"],
+html:not([data-adblock-disabled="true"]) [aria-label="quảng cáo"],
+html:not([data-adblock-disabled="true"]) [data-track-ad] {
+  display: none !important;
+}
+
+/* 5. Ẩn khung quảng cáo của các mạng quảng cáo Việt Nam (Admicro, Eclick, Ambient) */
+html:not([data-adblock-disabled="true"]) div[id^="adm_"],
+html:not([data-adblock-disabled="true"]) div[id^="eclick_"],
+html:not([data-adblock-disabled="true"]) div[class*="eclick"],
+html:not([data-adblock-disabled="true"]) div[id^="ambient_"],
+html:not([data-adblock-disabled="true"]) div[class*="adm-banner"],
+html:not([data-adblock-disabled="true"]) div[id*="admicro"] {
+  display: none !important;
+}
