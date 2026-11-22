@@ -1,23 +1,70 @@
-// ==========================================================================
+// ===========================================================================
 // BACKGROUND SERVICE WORKER - My AdBlocker (Manifest V3)
 // Đảm bảo hoạt động 100% ổn định, không lỗi API declarativeNetRequest
-// ==========================================================================
+// ===========================================================================
 
 const RULESET_ADS = "rules_ads";
 const RULESET_TRACKERS = "rules_trackers";
 const RULESET_POPUPS = "rules_popups";
-
+// Old base IDs kept for reference (no longer used)
 const WHITELIST_BASE_ID = 1000;
 const CUSTOM_BLOCK_BASE_ID = 2000;
 
-// Sử dụng storage.session (nếu hỗ trợ) hoặc storage.local để lưu tabStats
-// Đảm bảo không bị mất số liệu khi Service Worker tạm dừng (Sleep)
+// --------------------------------------------------------------------------
+// 1. DEFAULT STATE
+// --------------------------------------------------------------------------
+const DEFAULTS = {
+  enabled: true,
+  filterNetwork: true,
+  filterTrackers: true,
+  filterCosmetic: true,
+  whitelistedDomains: [],
+  customBlockedDomains: [],
+  totalBlocked: 0,
+  adsBlocked: 0,
+  trackersBlocked: 0,
+  // popupsBlocked can be added later if needed
+};
+
+// --------------------------------------------------------------------------
+// 2. HELPERS – storage & queue
+// --------------------------------------------------------------------------
+function getState() {
+  return new Promise((resolve) => {
+    chrome.storage.local.get(DEFAULTS, (res) => resolve(res));
+  });
+}
+
+let queue = Promise.resolve();
+function enqueue(fn) {
+  queue = queue.then(() => fn()).catch((e) => console.error(e));
+  return queue;
+}
+
+// --------------------------------------------------------------------------
+// 3. DOMAIN NORMALISATION
+// --------------------------------------------------------------------------
+const DOMAIN_RE = /^(?=.{3,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+(?:[a-z]{2,63}|xn--[a-z0-9-]{1,59})$/i;
+function normalizeDomain(raw) {
+  try {
+    const s = String(raw).trim();
+    const url = new URL(s.includes('://') ? s : `https://${s}`);
+    const host = url.hostname.replace(/^www\./i, "").toLowerCase();
+    return DOMAIN_RE.test(host) ? host : null;
+  } catch {
+    return null;
+  }
+}
+
+// --------------------------------------------------------------------------
+// 4. TAB STATISTICS (session/local storage to survive service‑worker sleep)
+// --------------------------------------------------------------------------
 async function getTabStats(tabId) {
   try {
     const key = `tab_stats_${tabId}`;
     const storageArea = chrome.storage.session || chrome.storage.local;
-    const res = await storageArea.get(key);
-    return res[key] || { total: 0, ads: 0, trackers: 0, popups: 0 };
+    const result = await storageArea.get(key);
+    return result[key] || { total: 0, ads: 0, trackers: 0, popups: 0 };
   } catch {
     return { total: 0, ads: 0, trackers: 0, popups: 0 };
   }
@@ -28,137 +75,57 @@ async function setTabStats(tabId, stats) {
     const key = `tab_stats_${tabId}`;
     const storageArea = chrome.storage.session || chrome.storage.local;
     await storageArea.set({ [key]: stats });
-  } catch (err) {
-    console.warn("[My AdBlocker] Không thể lưu tab stats:", err);
+  } catch (e) {
+    console.warn('[My AdBlocker] Không thể lưu tab stats:', e);
   }
 }
 
 // --------------------------------------------------------------------------
-// 1. KHỞI TẠO VÀ ĐỒNG BỘ TRẠNG THÁI
+// 5. APPLY STATE – sync static and dynamic rules
 // --------------------------------------------------------------------------
-async function initializeExtension() {
-  chrome.storage.local.get([
-    "enabled",
-    "filterNetwork",
-    "filterTrackers",
-    "filterCosmetic",
-    "whitelistedDomains",
-    "customBlockedDomains",
-    "totalBlocked",
-    "adsBlocked",
-    "trackersBlocked"
-  ], async (res) => {
-    const isEnabled = res.enabled !== undefined ? res.enabled : true;
-    const filterNetwork = res.filterNetwork !== false;
-    const filterTrackers = res.filterTrackers !== false;
-    const filterCosmetic = res.filterCosmetic !== false;
-    const whitelisted = res.whitelistedDomains || [];
-    const customBlocked = res.customBlockedDomains || [];
+async function applyState() {
+  const state = await getState();
 
-    // Lưu giá trị mặc định nếu chưa có
-    if (res.enabled === undefined) {
-      await chrome.storage.local.set({
-        enabled: true,
-        filterNetwork: true,
-        filterTrackers: true,
-        filterCosmetic: true,
-        whitelistedDomains: [],
-        customBlockedDomains: [],
-        totalBlocked: 0,
-        adsBlocked: 0,
-        trackersBlocked: 0
-      });
+  // ----- static rulesets -----
+  const desired = [];
+  if (state.enabled) {
+    if (state.filterNetwork) {
+      desired.push(RULESET_ADS, RULESET_POPUPS);
     }
-
-    await syncRulesetsSafe(isEnabled, filterNetwork, filterTrackers, filterCosmetic);
-    await syncDynamicRulesSafe(whitelisted, customBlocked);
-    console.log("[My AdBlocker] Khởi tạo thành công!");
-  });
-}
-
-// Gọi khởi tạo khi cài đặt hoặc cập nhật
-chrome.runtime.onInstalled.addListener(() => {
-  initializeExtension();
-});
-
-// Gọi khi trình duyệt khởi động
-chrome.runtime.onStartup.addListener(() => {
-  initializeExtension();
-});
-
-// --------------------------------------------------------------------------
-// 2. ĐỒNG BỘ RULESETS AN TOÀN (TRÁNH LỖI ALREADY ENABLED / DISABLED)
-// --------------------------------------------------------------------------
-async function syncRulesetsSafe(enabled, filterNetwork, filterTrackers, filterPopups) {
-  try {
-    const currentEnabled = await chrome.declarativeNetRequest.getEnabledRulesets();
-    
-    // Xác định các rulesets cần bật
-    const desiredEnabled = [];
-    if (enabled) {
-      if (filterNetwork) desiredEnabled.push(RULESET_ADS);
-      if (filterTrackers) desiredEnabled.push(RULESET_TRACKERS);
-      if (filterPopups !== false) desiredEnabled.push(RULESET_POPUPS);
+    if (state.filterTrackers) {
+      desired.push(RULESET_TRACKERS);
     }
-
-    // Tất cả các rulesets thuộc extension
-    const allKnownRulesets = [RULESET_ADS, RULESET_TRACKERS, RULESET_POPUPS];
-    
-    // Chỉ bật những cái chưa được bật
-    const enableRulesetIds = desiredEnabled.filter(id => !currentEnabled.includes(id));
-    
-    // Chỉ tắt những cái đang bật mà không nằm trong danh sách cần bật
-    const disableRulesetIds = allKnownRulesets.filter(id => !desiredEnabled.includes(id) && currentEnabled.includes(id));
-
-    if (enableRulesetIds.length > 0 || disableRulesetIds.length > 0) {
-      await chrome.declarativeNetRequest.updateEnabledRulesets({
-        enableRulesetIds,
-        disableRulesetIds
-      });
-      console.log("[My AdBlocker] Rulesets đã cập nhật:", { enableRulesetIds, disableRulesetIds });
-    }
-  } catch (err) {
-    console.error("[My AdBlocker] Lỗi khi cập nhật rulesets:", err);
   }
-}
+  const currentlyEnabled = await chrome.declarativeNetRequest.getEnabledRulesets();
+  const toEnable = desired.filter(id => !currentlyEnabled.includes(id));
+  const toDisable = currentlyEnabled.filter(id => !desired.includes(id));
+  if (toEnable.length || toDisable.length) {
+    await chrome.declarativeNetRequest.updateEnabledRulesets({
+      enableRulesetIds: toEnable,
+      disableRulesetIds: toDisable,
+    });
+  }
 
-// --------------------------------------------------------------------------
-// 3. ĐỒNG BỘ DYNAMIC RULES (CHUẨN HÓA resourceTypes ĐỂ KHÔNG BỊ CHROME TỪ CHỐI)
-// --------------------------------------------------------------------------
-async function syncDynamicRulesSafe(whitelisted = [], customBlocked = []) {
-  try {
-    const currentRules = await chrome.declarativeNetRequest.getDynamicRules();
-    const removeRuleIds = currentRules.map(r => r.id);
-    const addRules = [];
-
-    // 3.1. Whitelist: Cho phép mọi request phát sinh từ tên miền trong whitelist
-    // Dùng requestDomains kết hợp main_frame/sub_frame để DNR khớp ngay từ request điều hướng
-    whitelisted.forEach((domain, idx) => {
-      const cleanDomain = domain.trim().toLowerCase();
-      if (!cleanDomain) return;
-
-      addRules.push({
-        id: WHITELIST_BASE_ID + idx,
+  // ----- dynamic rules -----
+  const dynamic = [];
+  if (state.enabled) {
+    // whitelist – allow all requests from domain (main_frame & sub_frame only)
+    state.whitelistedDomains.slice(0, 5000).forEach((d, i) => {
+      dynamic.push({
+        id: 100000 + i,
         priority: 100,
         action: { type: "allowAllRequests" },
-        condition: {
-          requestDomains: [cleanDomain],
-          resourceTypes: ["main_frame", "sub_frame"]
-        }
+        condition: { requestDomains: [d], resourceTypes: ["main_frame", "sub_frame"] },
       });
     });
-
-    // 3.2. Custom Blocks: Chặn các tên miền do người dùng tự nhập
-    customBlocked.forEach((domain, idx) => {
-      const cleanDomain = domain.trim().toLowerCase();
-      if (!cleanDomain) return;
-
-      addRules.push({
-        id: CUSTOM_BLOCK_BASE_ID + idx,
+    // custom block – block every request type from domain
+    state.customBlockedDomains.slice(0, 5000).forEach((d, i) => {
+      dynamic.push({
+        id: 200000 + i,
         priority: 50,
         action: { type: "block" },
         condition: {
-          urlFilter: `||${cleanDomain}^`,
+          requestDomains: [d],
           resourceTypes: [
             "main_frame",
             "sub_frame",
@@ -168,25 +135,148 @@ async function syncDynamicRulesSafe(whitelisted = [], customBlocked = []) {
             "font",
             "xmlhttprequest",
             "ping",
-            "other"
-          ]
-        }
+            "media",
+            "other",
+          ],
+        },
       });
     });
-
-    await chrome.declarativeNetRequest.updateDynamicRules({
-      removeRuleIds,
-      addRules
-    });
-
-    console.log(`[My AdBlocker] Dynamic Rules cập nhật thành công (${whitelisted.length} whitelist, ${customBlocked.length} custom block)`);
-  } catch (err) {
-    console.error("[My AdBlocker] Lỗi khi cập nhật dynamic rules:", err);
   }
+  const existing = await chrome.declarativeNetRequest.getDynamicRules();
+  const removeIds = existing.map(r => r.id);
+  await chrome.declarativeNetRequest.updateDynamicRules({ removeRuleIds: removeIds, addRules: dynamic });
 }
 
 // --------------------------------------------------------------------------
-// 4. LẮNG NGHE YÊU CẦU BỊ CHẶN (THỐNG KÊ THẬT 100%)
+// 6. USER‑LEVEL LIST MUTATION
+// --------------------------------------------------------------------------
+class UserError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = "UserError";
+  }
+}
+
+async function mutateList(listName, op, raw) {
+  const state = await getState();
+  const key = listName === "whitelist" ? "whitelistedDomains" : "customBlockedDomains";
+  const limit = 5000;
+  const list = state[key] || [];
+  const domain = normalizeDomain(raw);
+  if (!domain) throw new UserError("Tên miền không hợp lệ");
+  if (op === "add") {
+    if (list.includes(domain)) throw new UserError("Tên miền đã tồn tại trong danh sách");
+    if (list.length >= limit) throw new UserError("Đã đạt tối đa 5000 mục");
+    const newList = [...list, domain];
+    await new Promise(resolve => chrome.storage.local.set({ [key]: newList }, resolve));
+    await applyState();
+    return newList;
+  }
+  if (op === "remove") {
+    const idx = list.indexOf(domain);
+    if (idx === -1) throw new UserError("Tên miền không có trong danh sách");
+    const newList = list.slice(0, idx).concat(list.slice(idx + 1));
+    await new Promise(resolve => chrome.storage.local.set({ [key]: newList }, resolve));
+    await applyState();
+    return newList;
+  }
+  throw new Error("Invalid operation");
+}
+
+// --------------------------------------------------------------------------
+// 7. MESSAGE HANDLER – new contract
+// --------------------------------------------------------------------------
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (sender.id && sender.id !== chrome.runtime.id) {
+    return false; // ignore external callers
+  }
+  const handle = async () => {
+    switch (msg.action) {
+      case "get_state": {
+        const state = await getState();
+        return { success: true, state };
+      }
+      case "set_flag": {
+        const { name, value } = msg;
+        if (!["enabled", "filterNetwork", "filterTrackers", "filterCosmetic"].includes(name)) {
+          return { success: false, error: "Tên cờ không hợp lệ" };
+        }
+        if (typeof value !== "boolean") {
+          return { success: false, error: "Giá trị phải là boolean" };
+        }
+        await new Promise(resolve => chrome.storage.local.set({ [name]: value }, resolve));
+        await applyState();
+        return { success: true };
+      }
+      case "list_add": {
+        const { list, domain } = msg;
+        if (!["whitelist", "customBlock"].includes(list)) {
+          return { success: false, error: "Danh sách không hợp lệ" };
+        }
+        try {
+          const newList = await mutateList(list, "add", domain);
+          return { success: true, domains: newList };
+        } catch (e) {
+          if (e instanceof UserError) return { success: false, error: e.message };
+          console.error(e);
+          return { success: false, error: "Lỗi hệ thống" };
+        }
+      }
+      case "list_remove": {
+        const { list, domain } = msg;
+        if (!["whitelist", "customBlock"].includes(list)) {
+          return { success: false, error: "Danh sách không hợp lệ" };
+        }
+        try {
+          const newList = await mutateList(list, "remove", domain);
+          return { success: true, domains: newList };
+        } catch (e) {
+          if (e instanceof UserError) return { success: false, error: e.message };
+          console.error(e);
+          return { success: false, error: "Lỗi hệ thống" };
+        }
+      }
+      case "get_stats": {
+        const { tabId } = msg;
+        if (typeof tabId !== "number") return { success: false, error: "tabId missing" };
+        const stats = await getTabStats(tabId);
+        const totals = await new Promise(resolve => chrome.storage.local.get(["totalBlocked", "adsBlocked", "trackersBlocked"], resolve));
+        return {
+          success: true,
+          pageBlocked: stats.total,
+          pageAds: stats.ads,
+          pageTrackers: stats.trackers,
+          pagePopups: stats.popups,
+          totalBlocked: totals.totalBlocked || 0,
+          adsBlocked: totals.adsBlocked || 0,
+          trackersBlocked: totals.trackersBlocked || 0,
+        };
+      }
+      case "reset_stats": {
+        const storageArea = chrome.storage.session || chrome.storage.local;
+        // clear per‑tab stats
+        chrome.tabs.query({}, (tabs) => {
+          tabs.forEach(t => storageArea.remove(`tab_stats_${t.id}`));
+        });
+        await new Promise(resolve => chrome.storage.local.set({ totalBlocked: 0, adsBlocked: 0, trackersBlocked: 0 }, resolve));
+        return { success: true };
+      }
+      default:
+        return { success: false, error: "Hành động không hỗ trợ" };
+    }
+  };
+  handle().then(sendResponse).catch(err => sendResponse({ success: false, error: err.message }));
+  return true; // async response
+});
+
+// --------------------------------------------------------------------------
+// 8. INITIALISE – install / startup
+// --------------------------------------------------------------------------
+chrome.runtime.onInstalled.addListener(() => enqueue(applyState));
+chrome.runtime.onStartup.addListener(() => enqueue(applyState));
+
+// --------------------------------------------------------------------------
+// 9. STATISTICS – rule‑matched debug (if available)
 // --------------------------------------------------------------------------
 if (chrome.declarativeNetRequest.onRuleMatchedDebug) {
   chrome.declarativeNetRequest.onRuleMatchedDebug.addListener(async (info) => {
@@ -194,184 +284,51 @@ if (chrome.declarativeNetRequest.onRuleMatchedDebug) {
       const tabId = info.request && info.request.tabId ? info.request.tabId : -1;
       const rulesetId = info.rule ? info.rule.rulesetId : "";
       const ruleId = info.rule ? info.rule.ruleId : 0;
-
       let category = "ads";
       if (rulesetId === RULESET_TRACKERS || (ruleId >= 101 && ruleId <= 200)) {
         category = "trackers";
       } else if (rulesetId === RULESET_POPUPS || (ruleId >= 201 && ruleId <= 300)) {
         category = "popups";
       }
-
-      // Cập nhật thống kê Tab
       if (tabId > 0) {
         const stats = await getTabStats(tabId);
         stats.total++;
         if (category === "trackers") stats.trackers++;
         else if (category === "popups") stats.popups++;
         else stats.ads++;
-
         await setTabStats(tabId, stats);
-        updateTabBadge(tabId, stats.total);
+        const total = stats.total;
+        if (total > 0) {
+          chrome.action.setBadgeText({ tabId, text: total > 999 ? "999+" : total.toString() });
+          chrome.action.setBadgeBackgroundColor({ tabId, color: "#00E5A3" });
+        } else {
+          chrome.action.setBadgeText({ tabId, text: "" });
+        }
       }
-
-      // Cập nhật thống kê tổng
-      chrome.storage.local.get(["totalBlocked", "adsBlocked", "trackersBlocked", "enabled"], (res) => {
-        if (res.enabled === false) return;
-
-        const newTotal = (res.totalBlocked || 0) + 1;
-        const newAds = (res.adsBlocked || 0) + (category === "ads" || category === "popups" ? 1 : 0);
-        const newTrackers = (res.trackersBlocked || 0) + (category === "trackers" ? 1 : 0);
-
-        chrome.storage.local.set({
-          totalBlocked: newTotal,
-          adsBlocked: newAds,
-          trackersBlocked: newTrackers
-        });
-      });
+      // global counters
+      const inc = await new Promise(resolve => chrome.storage.local.get(["totalBlocked", "adsBlocked", "trackersBlocked"], resolve));
+      const upd = {};
+      upd.totalBlocked = (inc.totalBlocked || 0) + 1;
+      if (category === "trackers") upd.trackersBlocked = (inc.trackersBlocked || 0) + 1;
+      else if (category === "ads") upd.adsBlocked = (inc.adsBlocked || 0) + 1;
+      await new Promise(resolve => chrome.storage.local.set(upd, resolve));
     } catch (e) {
       console.warn("[My AdBlocker] Lỗi ghi nhận thống kê:", e);
     }
   });
 }
 
-// Reset thống kê của Tab khi trang bắt đầu tải mới
+// --------------------------------------------------------------------------
+// 10. CLEAN‑UP – tab navigation & removal
+// --------------------------------------------------------------------------
 chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
   if (changeInfo.status === "loading") {
     setTabStats(tabId, { total: 0, ads: 0, trackers: 0, popups: 0 });
-    updateTabBadge(tabId, 0);
+    chrome.action.setBadgeText({ tabId, text: "" }).catch(() => {});
   }
 });
 
-// Xóa dữ liệu khi tab đóng
 chrome.tabs.onRemoved.addListener((tabId) => {
   const storageArea = chrome.storage.session || chrome.storage.local;
-  storageArea.remove(`tab_stats_${tabId}`);
-});
-
-// Cập nhật Badge trên icon
-function updateTabBadge(tabId, count) {
-  chrome.storage.local.get(["enabled"], (res) => {
-    const isEnabled = res.enabled !== false;
-    if (!isEnabled) {
-      chrome.action.setBadgeText({ tabId, text: "OFF" });
-      chrome.action.setBadgeBackgroundColor({ tabId, color: "#64748B" });
-    } else if (count > 0) {
-      chrome.action.setBadgeText({ tabId, text: count > 999 ? "999+" : count.toString() });
-      chrome.action.setBadgeBackgroundColor({ tabId, color: "#00E5A3" });
-    } else {
-      chrome.action.setBadgeText({ tabId, text: "" });
-    }
-  });
-}
-
-// --------------------------------------------------------------------------
-// 5. GIAO TIẾP VỚI POPUP
-// --------------------------------------------------------------------------
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  // Lấy thống kê thật cho Tab
-  if (message.action === "get_stats") {
-    const tabId = message.tabId;
-    getTabStats(tabId).then((tabData) => {
-      chrome.storage.local.get(["totalBlocked", "adsBlocked", "trackersBlocked"], (res) => {
-        sendResponse({
-          pageBlocked: tabData.total,
-          pageAds: tabData.ads,
-          pageTrackers: tabData.trackers,
-          totalBlocked: res.totalBlocked || 0,
-          adsBlocked: res.adsBlocked || 0,
-          trackersBlocked: res.trackersBlocked || 0
-        });
-      });
-    });
-    return true;
-  }
-
-  // Bật/Tắt công tắc chính
-  if (message.action === "toggle_extension") {
-    const shouldEnable = message.enabled;
-    chrome.storage.local.get(["filterNetwork", "filterTrackers", "filterCosmetic"], async (res) => {
-      await syncRulesetsSafe(
-        shouldEnable,
-        res.filterNetwork !== false,
-        res.filterTrackers !== false,
-        res.filterCosmetic !== false
-      );
-
-      chrome.storage.local.set({ enabled: shouldEnable }, () => {
-        chrome.tabs.query({}, (tabs) => {
-          tabs.forEach(tab => {
-            getTabStats(tab.id).then(stats => {
-              updateTabBadge(tab.id, stats.total);
-            });
-          });
-        });
-        sendResponse({ success: true, enabled: shouldEnable });
-      });
-    });
-    return true;
-  }
-
-  // Bật/Tắt từng bộ lọc riêng
-  if (message.action === "toggle_filter") {
-    const { filterName, value } = message;
-    chrome.storage.local.get(["enabled", "filterNetwork", "filterTrackers", "filterCosmetic"], async (res) => {
-      const isEnabled = res.enabled !== false;
-      const state = {
-        filterNetwork: filterName === "filterNetwork" ? value : (res.filterNetwork !== false),
-        filterTrackers: filterName === "filterTrackers" ? value : (res.filterTrackers !== false),
-        filterCosmetic: filterName === "filterCosmetic" ? value : (res.filterCosmetic !== false)
-      };
-
-      await syncRulesetsSafe(isEnabled, state.filterNetwork, state.filterTrackers, state.filterCosmetic);
-      chrome.storage.local.set({ [filterName]: value }, () => {
-        sendResponse({ success: true });
-      });
-    });
-    return true;
-  }
-
-  // Cập nhật Whitelist
-  if (message.action === "update_whitelist") {
-    const domains = message.domains || [];
-    chrome.storage.local.set({ whitelistedDomains: domains }, () => {
-      chrome.storage.local.get(["customBlockedDomains"], async (res) => {
-        await syncDynamicRulesSafe(domains, res.customBlockedDomains || []);
-        sendResponse({ success: true, domains });
-      });
-    });
-    return true;
-  }
-
-  // Cập nhật Custom Blocked
-  if (message.action === "update_custom_blocks") {
-    const domains = message.domains || [];
-    chrome.storage.local.set({ customBlockedDomains: domains }, () => {
-      chrome.storage.local.get(["whitelistedDomains"], async (res) => {
-        await syncDynamicRulesSafe(res.whitelistedDomains || [], domains);
-        sendResponse({ success: true, domains });
-      });
-    });
-    return true;
-  }
-
-  // Đặt lại số liệu thống kê
-  if (message.action === "reset_stats") {
-    const storageArea = chrome.storage.session || chrome.storage.local;
-    chrome.tabs.query({}, (tabs) => {
-      tabs.forEach(tab => {
-        storageArea.remove(`tab_stats_${tab.id}`);
-        chrome.action.setBadgeText({ tabId: tab.id, text: "" });
-      });
-    });
-
-    chrome.storage.local.set({
-      totalBlocked: 0,
-      adsBlocked: 0,
-      trackersBlocked: 0
-    }, () => {
-      chrome.action.setBadgeText({ text: "" });
-      sendResponse({ success: true });
-    });
-    return true;
-  }
+  storageArea.remove(`tab_stats_${tabId}`).catch(() => {});
 });

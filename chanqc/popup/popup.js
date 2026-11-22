@@ -1,10 +1,10 @@
-// ==========================================================================
+// ===========================================================================
 // POPUP CONTROLLER LOGIC - My AdBlocker (Manifest V3)
-// Quản lý giao diện, kết nối với Chrome APIs, xử lý lỗi an toàn
-// ==========================================================================
+// Refactored to use Shared API (Single Source of Truth) as per Phase 1.
+// ===========================================================================
 
 document.addEventListener("DOMContentLoaded", async () => {
-  // 1. DOM Elements
+  // ==== DOM ELEMENTS ========================================================
   const masterToggle = document.getElementById("masterToggle");
   const heroSection = document.getElementById("heroSection");
   const headerStatusBadge = document.getElementById("headerStatusBadge");
@@ -40,215 +40,239 @@ document.addEventListener("DOMContentLoaded", async () => {
   const resetCounterBtn = document.getElementById("resetCounterBtn");
   const openDashboardBtn = document.getElementById("openDashboardBtn");
 
-  if (openDashboardBtn) {
-    openDashboardBtn.addEventListener("click", () => {
-      if (typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.openOptionsPage) {
-        chrome.runtime.openOptionsPage();
-      } else {
-        window.open("dashboard.html", "_blank");
-      }
-    });
-  }
+  // ==== ENV CHECK ==========================================================
+  const isExtensionEnv = typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.sendMessage;
 
-  // 2. Trạng thái cục bộ
+  // ==== STATE ==============================================================
   let currentTab = null;
   let currentHostname = "";
   let whitelistedList = [];
   let customBlockedList = [];
   let currentDomainTab = "whitelist"; // 'whitelist' | 'customBlock'
 
-  // Kiểm tra môi trường Chrome Extension
-  const isExtensionEnv = typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.sendMessage;
+  // Helper: refresh UI from full state object returned by background.
+  async function refreshUI() {
+    const resp = await api.state();
+    if (!resp.success) {
+      console.error("Failed to get state:", resp.error);
+      return;
+    }
+    const st = resp.state;
+    // Flags
+    masterToggle.checked = st.enabled;
+    filterNetwork.checked = st.filterNetwork;
+    filterCosmetic.checked = st.filterCosmetic;
+    filterTrackers.checked = st.filterTrackers;
+    // Lists
+    whitelistedList = st.whitelistedDomains || [];
+    customBlockedList = st.customBlockedDomains || [];
+    // UI updates
+    updateHeroUI(st.enabled);
+    updateSiteStatusUI();
+    updateDomainCounts();
+    renderDomainList();
+    // Stats (real-time per‑tab stats are requested separately)
+    requestRealStats();
+  }
 
-  // 3. Lấy thông tin Tab đang duyệt
+  // ==== INITIALISE =========================================================
+  // 1. Load current tab info (hostname)
   if (isExtensionEnv && chrome.tabs) {
     try {
       const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
-      if (tabs && tabs[0]) {
-        currentTab = tabs[0];
-        if (currentTab.url) {
-          try {
-            const urlObj = new URL(currentTab.url);
-            if (urlObj.protocol.startsWith("http")) {
-              currentHostname = urlObj.hostname.toLowerCase();
-              currentSiteDomain.textContent = currentHostname;
-            } else {
-              currentHostname = "";
-              currentSiteDomain.textContent = "Trang hệ thống";
-              siteProtectionText.textContent = "Không áp dụng bộ lọc";
-              toggleSiteBtn.style.display = "none";
-            }
-          } catch {
-            currentHostname = "";
-            currentSiteDomain.textContent = "Trang cục bộ";
-          }
+      if (tabs && tabs[0] && tabs[0].url) {
+        const urlObj = new URL(tabs[0].url);
+        if (urlObj.protocol.startsWith("http")) {
+          currentHostname = urlObj.hostname.toLowerCase();
+          currentSiteDomain.textContent = currentHostname;
+        } else {
+          currentHostname = "";
+          currentSiteDomain.textContent = "Trang hệ thống";
+          siteProtectionText.textContent = "Không áp dụng bộ lọc";
+          toggleSiteBtn.style.display = "none";
         }
       }
-    } catch (err) {
-      console.warn("[My AdBlocker] Không thể truy cập tab:", err);
+    } catch (e) {
+      console.warn("[My AdBlocker] Không thể truy cập tab:", e);
       currentSiteDomain.textContent = "Không xác định";
     }
   } else {
-    // Môi trường xem trước cục bộ (Preview)
+    // Preview mode – use a placeholder domain
     currentHostname = "vnexpress.net";
     currentSiteDomain.textContent = currentHostname;
   }
 
-  // 4. Lấy dữ liệu từ Storage và Background
-  if (isExtensionEnv && chrome.storage && chrome.storage.local) {
-    chrome.storage.local.get([
-      "enabled",
-      "filterNetwork",
-      "filterCosmetic",
-      "filterTrackers",
-      "whitelistedDomains",
-      "customBlockedDomains"
-    ], (res) => {
-      const isEnabled = res.enabled !== undefined ? res.enabled : true;
-      whitelistedList = res.whitelistedDomains || [];
-      customBlockedList = res.customBlockedDomains || [];
+  // 2. Load full extension state via shared API
+  await refreshUI();
 
-      // Gán trạng thái công tắc Master
-      masterToggle.checked = isEnabled;
-      updateHeroUI(isEnabled);
-
-      // Gán trạng thái các bộ lọc
-      filterNetwork.checked = res.filterNetwork !== false;
-      filterCosmetic.checked = res.filterCosmetic !== false;
-      filterTrackers.checked = res.filterTrackers !== false;
-
-      // Cập nhật trạng thái trang hiện tại
-      if (currentHostname) {
-        const isSiteWhitelisted = whitelistedList.includes(currentHostname);
-        updateSiteStatusUI(isSiteWhitelisted);
+  // ==== STORAGE CHANGE LISTENER (sync UI across popup & dashboard) ========
+  if (isExtensionEnv && chrome.storage) {
+    chrome.storage.onChanged.addListener((changes, area) => {
+      if (area === "local") {
+        // Re‑fetch the whole state to stay consistent.
+        refreshUI();
       }
-
-      // Cập nhật giao diện quản lý domain
-      updateDomainCounts();
-      renderDomainList();
-
-      // Lấy số liệu thống kê THỰC TẾ từ background
-      requestRealStats();
     });
-  } else {
-    // Giá trị giả lập cho preview tĩnh
-    masterToggle.checked = true;
-    updateHeroUI(true);
-    whitelistedList = ["github.com", "google.com"];
-    customBlockedList = ["ads-example.com"];
-    updateDomainCounts();
-    renderDomainList();
   }
 
-  // 5. Hàm yêu cầu dữ liệu thống kê thực tế từ Service Worker
+  // ==== UI HELPERS =========================================================
+
+const animateTimers = new WeakMap();
+
+function animateNumber(element, target) {
+  const prefersReducedMotion = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  if (prefersReducedMotion) {
+    element.textContent = target.toString();
+    return;
+  }
+  // Clear previous timer if any
+  const prev = animateTimers.get(element);
+  if (prev) clearInterval(prev);
+
+  const current = parseInt(element.textContent, 10) || 0;
+  if (current === target) {
+    element.textContent = target.toString();
+    return;
+  }
+  const diff = target - current;
+  const step = Math.ceil(Math.abs(diff) / 10) * (diff > 0 ? 1 : -1);
+  let val = current;
+  const interval = setInterval(() => {
+    val += step;
+    if ((step > 0 && val >= target) || (step < 0 && val <= target)) {
+      val = target;
+      clearInterval(interval);
+    }
+    element.textContent = val.toString();
+  }, 25);
+  animateTimers.set(element, interval);
+}
+  function updateHeroUI(isEnabled) {
+    if (isEnabled) {
+      heroSection.classList.remove("is-paused");
+      headerStatusBadge.classList.remove("is-paused");
+      headerStatusBadge.textContent = "Đang chạy";
+    } else {
+      heroSection.classList.add("is-paused");
+      headerStatusBadge.classList.add("is-paused");
+      headerStatusBadge.textContent = "Tạm dừng";
+    }
+  }
+
+  function updateSiteStatusUI() {
+    const isWhitelisted = api.matchEntry(currentHostname, whitelistedList);
+    if (isWhitelisted) {
+      siteProtectionText.textContent = "Đã tạm dừng trên trang này";
+      toggleSiteBtn.textContent = "Bỏ tạm dừng";
+    } else {
+      siteProtectionText.textContent = "Đang bảo vệ";
+      toggleSiteBtn.textContent = "Tạm dừng trang này";
+    }
+  }
+
+  function updateDomainCounts() {
+    whitelistCount.textContent = whitelistedList.length.toString();
+    customBlockCount.textContent = customBlockedList.length.toString();
+  }
+
+  function renderDomainList() {
+    // Use shared API helper for consistency.
+    api.renderDomainList(domainItemsList,
+      currentDomainTab === "whitelist" ? whitelistedList : customBlockedList,
+      (domain) => {
+        // Delete handler – delegate to background.
+        api.listRemove(currentDomainTab, domain).then((res) => {
+          if (!res.success) {
+            domainInputError.textContent = res.error || "Lỗi khi xóa tên miền";
+            domainInputError.style.display = "block";
+            return;
+          }
+          if (currentDomainTab === "whitelist") {
+            whitelistedList = res.domains;
+          } else {
+            customBlockedList = res.domains;
+          }
+          updateDomainCounts();
+          renderDomainList();
+        });
+      }
+    );
+    // Empty state handling
+    if ((currentDomainTab === "whitelist" ? whitelistedList : customBlockedList).length === 0) {
+      domainEmptyState.style.display = "block";
+      domainItemsList.style.display = "none";
+    } else {
+      domainEmptyState.style.display = "none";
+      domainItemsList.style.display = "flex";
+    }
+  }
+
+  function showDomainError(msg) {
+    domainInputError.textContent = msg;
+    domainInputError.style.display = "block";
+  }
+  function clearDomainError() {
+    domainInputError.textContent = "";
+    domainInputError.style.display = "none";
+  }
+
   function requestRealStats() {
     if (!isExtensionEnv || !currentTab || !currentTab.id) return;
-
-    chrome.runtime.sendMessage({
-      action: "get_stats",
-      tabId: currentTab.id
-    }, (stats) => {
-      if (chrome.runtime.lastError || !stats) {
-        return;
-      }
-
-      // Hiển thị số liệu thực tế đo đạc được
-      animateNumber(pageBlockedCount, stats.pageBlocked || 0);
-      animateNumber(totalBlockedCount, stats.totalBlocked || 0);
-      if (trackerStatsCount) {
-        trackerStatsCount.textContent = (stats.trackersBlocked || 0).toString();
-      }
+    api.send({ action: "get_stats", tabId: currentTab.id }).then((stats) => {
+      if (!stats) return; // background may return undefined on error
+      pageBlockedCount && animateNumber(pageBlockedCount, stats.pageBlocked || 0);
+      totalBlockedCount && animateNumber(totalBlockedCount, stats.totalBlocked || 0);
+      if (trackerStatsCount) trackerStatsCount.textContent = (stats.trackersBlocked || 0).toString();
     });
   }
 
-  // 6. Xử lý công tắc Master (Bật / Tắt toàn bộ)
-  masterToggle.addEventListener("change", () => {
+  // ==== EVENT HANDLERS =====================================================
+  // Master toggle
+  masterToggle.addEventListener("change", async () => {
     const isEnabled = masterToggle.checked;
     updateHeroUI(isEnabled);
-
-    if (isExtensionEnv) {
-      chrome.runtime.sendMessage({
-        action: "toggle_extension",
-        enabled: isEnabled
-      }, () => {
-        requestRealStats();
-      });
-    }
+    await api.setFlag("enabled", isEnabled);
+    requestRealStats();
   });
 
-  // 7. Xử lý các bộ lọc chi tiết
-  filterNetwork.addEventListener("change", () => {
-    if (isExtensionEnv) {
-      chrome.runtime.sendMessage({
-        action: "toggle_filter",
-        filterName: "filterNetwork",
-        value: filterNetwork.checked
-      });
-    }
-  });
+  // Filter checkboxes
+  filterNetwork.addEventListener("change", () => api.setFlag("filterNetwork", filterNetwork.checked));
+  filterCosmetic.addEventListener("change", () => api.setFlag("filterCosmetic", filterCosmetic.checked));
+  filterTrackers.addEventListener("change", () => api.setFlag("filterTrackers", filterTrackers.checked));
 
-  filterCosmetic.addEventListener("change", () => {
-    if (isExtensionEnv) {
-      chrome.runtime.sendMessage({
-        action: "toggle_filter",
-        filterName: "filterCosmetic",
-        value: filterCosmetic.checked
-      });
-    }
-  });
-
-  filterTrackers.addEventListener("change", () => {
-    if (isExtensionEnv) {
-      chrome.runtime.sendMessage({
-        action: "toggle_filter",
-        filterName: "filterTrackers",
-        value: filterTrackers.checked
-      });
-    }
-  });
-
-  // 8. Tạm dừng / Kích hoạt nhanh trên trang web đang mở
-  toggleSiteBtn.addEventListener("click", () => {
+  // Toggle site (whitelist / un‑whitelist)
+  toggleSiteBtn.addEventListener("click", async () => {
     if (!currentHostname) return;
-
-    const index = whitelistedList.indexOf(currentHostname);
-    let isNowWhitelisted = false;
-
-    if (index > -1) {
-      whitelistedList.splice(index, 1);
-      isNowWhitelisted = false;
-    } else {
-      whitelistedList.push(currentHostname);
-      isNowWhitelisted = true;
-    }
-
-    if (isExtensionEnv) {
-      chrome.runtime.sendMessage({
-        action: "update_whitelist",
-        domains: whitelistedList
-      }, () => {
-        updateSiteStatusUI(isNowWhitelisted);
+    const alreadyWhitelisted = api.matchEntry(currentHostname, whitelistedList);
+    if (alreadyWhitelisted) {
+      const resp = await api.listRemove("whitelist", currentHostname);
+      if (resp.success) {
+        whitelistedList = resp.domains;
+        updateSiteStatusUI();
         updateDomainCounts();
-        if (currentDomainTab === "whitelist") {
-          renderDomainList();
-        }
-      });
+        if (currentDomainTab === "whitelist") renderDomainList();
+      } else {
+        showDomainError(resp.error || "Lỗi khi bỏ whitelist");
+      }
     } else {
-      updateSiteStatusUI(isNowWhitelisted);
-      updateDomainCounts();
-      if (currentDomainTab === "whitelist") {
-        renderDomainList();
+      const resp = await api.listAdd("whitelist", currentHostname);
+      if (resp.success) {
+        whitelistedList = resp.domains;
+        updateSiteStatusUI();
+        updateDomainCounts();
+        if (currentDomainTab === "whitelist") renderDomainList();
+      } else {
+        showDomainError(resp.error || "Lỗi khi thêm whitelist");
       }
     }
   });
 
-  // 9. Quản lý danh sách tên miền (Thu gọn / Mở rộng)
+  // Domains manager UI toggle
   toggleDomainsManagerBtn.addEventListener("click", () => {
     const isExpanded = toggleDomainsManagerBtn.getAttribute("aria-expanded") === "true";
     toggleDomainsManagerBtn.setAttribute("aria-expanded", String(!isExpanded));
     domainsManagerBody.style.display = isExpanded ? "none" : "block";
   });
-
   toggleDomainsManagerBtn.addEventListener("keydown", (e) => {
     if (e.key === "Enter" || e.key === " ") {
       e.preventDefault();
@@ -256,7 +280,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
   });
 
-  // Chuyển Tab Whitelist / Custom Block
+  // Tab switch between whitelist / custom block
   tabWhitelistBtn.addEventListener("click", () => {
     currentDomainTab = "whitelist";
     tabWhitelistBtn.classList.add("is-active");
@@ -265,7 +289,6 @@ document.addEventListener("DOMContentLoaded", async () => {
     clearDomainError();
     renderDomainList();
   });
-
   tabCustomBlockBtn.addEventListener("click", () => {
     currentDomainTab = "customBlock";
     tabCustomBlockBtn.classList.add("is-active");
@@ -275,7 +298,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     renderDomainList();
   });
 
-  // Thêm tên miền vào danh sách
+  // Add domain button
   addDomainBtn.addEventListener("click", handleAddDomain);
   domainInput.addEventListener("keydown", (e) => {
     if (e.key === "Enter") {
@@ -284,244 +307,72 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
   });
 
-  function handleAddDomain() {
+  async function handleAddDomain() {
     clearDomainError();
-    const rawVal = domainInput.value.trim();
-    if (!rawVal) {
+    const raw = domainInput.value.trim();
+    if (!raw) {
       showDomainError("Vui lòng nhập tên miền.");
       return;
     }
-
-    // Chuẩn hóa tên miền (loại bỏ http://, https://, www., path)
-    let domain = rawVal.toLowerCase()
+    // Simple normalisation – background will validate.
+    const domain = raw.toLowerCase()
       .replace(/^https?:\/\//i, "")
       .replace(/^www\./i, "")
       .split("/")[0]
       .split("?")[0]
       .trim();
-
     if (!domain || !domain.includes(".") || domain.length < 3) {
-      showDomainError("Tên miền không hợp lệ (ví dụ: dantri.com.vn).");
+      showDomainError("Tên miền không hợp lệ (ví dụ: dantri.com.vn).",
+      );
       return;
     }
-
-    if (currentDomainTab === "whitelist") {
-      if (whitelistedList.includes(domain)) {
-        showDomainError("Tên miền này đã có trong Whitelist.");
-        return;
-      }
-      whitelistedList.push(domain);
-      if (isExtensionEnv) {
-        chrome.runtime.sendMessage({
-          action: "update_whitelist",
-          domains: whitelistedList
-        }, () => {
-          domainInput.value = "";
-          updateDomainCounts();
-          renderDomainList();
-          if (currentHostname === domain) {
-            updateSiteStatusUI(true);
-          }
-        });
-      } else {
-        domainInput.value = "";
-        updateDomainCounts();
-        renderDomainList();
-      }
+    const listName = currentDomainTab === "whitelist" ? "whitelist" : "customBlock";
+    const resp = await api.listAdd(listName, domain);
+    if (!resp.success) {
+      showDomainError(resp.error || "Lỗi khi thêm tên miền");
+      return;
+    }
+    if (listName === "whitelist") {
+      whitelistedList = resp.domains;
     } else {
-      if (customBlockedList.includes(domain)) {
-        showDomainError("Tên miền này đã có trong danh sách chặn.");
-        return;
-      }
-      customBlockedList.push(domain);
-      if (isExtensionEnv) {
-        chrome.runtime.sendMessage({
-          action: "update_custom_blocks",
-          domains: customBlockedList
-        }, () => {
-          domainInput.value = "";
-          updateDomainCounts();
-          renderDomainList();
-        });
-      } else {
-        domainInput.value = "";
-        updateDomainCounts();
-        renderDomainList();
-      }
+      customBlockedList = resp.domains;
+    }
+    domainInput.value = "";
+    updateDomainCounts();
+    renderDomainList();
+    if (currentHostname === domain && listName === "whitelist") {
+      updateSiteStatusUI();
     }
   }
 
-  function showDomainError(msg) {
-    domainInputError.textContent = msg;
-    domainInputError.style.display = "block";
-  }
-
-  function clearDomainError() {
-    domainInputError.textContent = "";
-    domainInputError.style.display = "none";
-  }
-
-  function updateDomainCounts() {
-    whitelistCount.textContent = whitelistedList.length.toString();
-    customBlockCount.textContent = customBlockedList.length.toString();
-  }
-
-  function renderDomainList() {
-    domainItemsList.innerHTML = "";
-    const list = currentDomainTab === "whitelist" ? whitelistedList : customBlockedList;
-
-    if (list.length === 0) {
-      domainEmptyState.style.display = "block";
-      domainItemsList.style.display = "none";
-      return;
-    }
-
-    domainEmptyState.style.display = "none";
-    domainItemsList.style.display = "flex";
-
-    list.forEach((domain, idx) => {
-      const li = document.createElement("li");
-      li.className = "domain-item";
-
-      const span = document.createElement("span");
-      span.className = "domain-item-text";
-      span.textContent = domain;
-
-      const delBtn = document.createElement("button");
-      delBtn.className = "domain-item-del";
-      delBtn.setAttribute("type", "button");
-      delBtn.setAttribute("aria-label", `Xóa ${domain}`);
-      delBtn.innerHTML = "&times;";
-
-      delBtn.addEventListener("click", () => {
-        deleteDomain(domain, idx);
-      });
-
-      li.appendChild(span);
-      li.appendChild(delBtn);
-      domainItemsList.appendChild(li);
+  // Reload page button – kept for convenience
+  if (reloadPageBtn) {
+    reloadPageBtn.addEventListener("click", () => {
+      if (isExtensionEnv && chrome.tabs && currentTab && currentTab.id) {
+        chrome.tabs.reload(currentTab.id);
+      }
     });
   }
 
-  function deleteDomain(domain, idx) {
-    if (currentDomainTab === "whitelist") {
-      whitelistedList.splice(idx, 1);
-      if (isExtensionEnv) {
-        chrome.runtime.sendMessage({
-          action: "update_whitelist",
-          domains: whitelistedList
-        }, () => {
-          updateDomainCounts();
-          renderDomainList();
-          if (currentHostname === domain) {
-            updateSiteStatusUI(false);
-          }
-        });
-      } else {
-        updateDomainCounts();
-        renderDomainList();
-      }
-    } else {
-      customBlockedList.splice(idx, 1);
-      if (isExtensionEnv) {
-        chrome.runtime.sendMessage({
-          action: "update_custom_blocks",
-          domains: customBlockedList
-        }, () => {
-          updateDomainCounts();
-          renderDomainList();
-        });
-      } else {
-        updateDomainCounts();
-        renderDomainList();
-      }
-    }
-  }
-
-  // 10. Nút Tải lại trang
-  reloadPageBtn.addEventListener("click", () => {
-    if (isExtensionEnv && currentTab && currentTab.id) {
-      chrome.tabs.reload(currentTab.id);
-      window.close();
-    } else {
-      location.reload();
-    }
-  });
-
-  // 11. Nút Xóa thống kê
-  resetCounterBtn.addEventListener("click", () => {
-    if (isExtensionEnv) {
-      chrome.runtime.sendMessage({ action: "reset_stats" }, () => {
-        animateNumber(pageBlockedCount, 0);
-        animateNumber(totalBlockedCount, 0);
-        if (trackerStatsCount) {
-          trackerStatsCount.textContent = "0";
-        }
+  // Reset counter button – delegates to background directly.
+  if (resetCounterBtn) {
+    resetCounterBtn.addEventListener("click", () => {
+      api.send({ action: "reset_stats" }).then(() => {
+        totalBlockedCount.textContent = "0";
+        pageBlockedCount.textContent = "0";
+        trackerStatsCount && (trackerStatsCount.textContent = "0");
       });
-    } else {
-      animateNumber(pageBlockedCount, 0);
-      animateNumber(totalBlockedCount, 0);
-      if (trackerStatsCount) {
-        trackerStatsCount.textContent = "0";
-      }
-    }
-  });
-
-  // 12. Cập nhật giao diện Trạng thái tổng (Hero Section)
-  function updateHeroUI(isEnabled) {
-    if (isEnabled) {
-      heroSection.classList.remove("is-paused");
-      headerStatusBadge.classList.remove("is-paused");
-      headerStatusBadge.textContent = "Đang chạy";
-      statusHeadline.textContent = "Bảo vệ đang bật";
-      statusSubtext.textContent = "Tất cả bộ lọc mạng và quảng cáo đang hoạt động";
-    } else {
-      heroSection.classList.add("is-paused");
-      headerStatusBadge.classList.add("is-paused");
-      headerStatusBadge.textContent = "Tạm dừng";
-      statusHeadline.textContent = "Đã tạm dừng bảo vệ";
-      statusSubtext.textContent = "Các yêu cầu quảng cáo sẽ không bị chặn";
-    }
+    });
   }
 
-  function updateSiteStatusUI(isWhitelisted) {
-    if (isWhitelisted) {
-      siteProtectionText.textContent = "Đã tạm dừng trên trang này";
-      siteProtectionText.classList.add("is-whitelisted");
-      siteActionText.textContent = "Kích hoạt lại";
-      toggleSiteBtn.classList.add("is-active-resume");
-      toggleSiteBtn.setAttribute("aria-label", "Kích hoạt lại bảo vệ trên trang này");
-    } else {
-      siteProtectionText.textContent = "Được bảo vệ trên trang này";
-      siteProtectionText.classList.remove("is-whitelisted");
-      siteActionText.textContent = "Tạm dừng";
-      toggleSiteBtn.classList.remove("is-active-resume");
-      toggleSiteBtn.setAttribute("aria-label", "Tạm dừng bảo vệ trên trang này");
-    }
-  }
-
-  function animateNumber(element, target) {
-    const prefersReducedMotion = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    if (prefersReducedMotion) {
-      element.textContent = target.toString();
-      return;
-    }
-
-    const current = parseInt(element.textContent, 10) || 0;
-    if (current === target) {
-      element.textContent = target.toString();
-      return;
-    }
-    const diff = target - current;
-    const step = Math.ceil(Math.abs(diff) / 10) * (diff > 0 ? 1 : -1);
-    let val = current;
-    const interval = setInterval(() => {
-      val += step;
-      if ((step > 0 && val >= target) || (step < 0 && val <= target)) {
-        val = target;
-        clearInterval(interval);
+  // Open dashboard – unchanged.
+  if (openDashboardBtn) {
+    openDashboardBtn.addEventListener("click", () => {
+      if (typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.openOptionsPage) {
+        chrome.runtime.openOptionsPage();
+      } else {
+        window.open("dashboard.html", "_blank");
       }
-      element.textContent = val.toString();
-    }, 25);
+    });
   }
 });

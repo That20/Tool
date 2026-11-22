@@ -17,7 +17,6 @@
       flex-direction: column;
       gap: clamp(16px, 2.5vw, 28px);
     }
-
     /* Top Navigation Bar */
     .dashboard-nav {
       display: flex;
@@ -27,26 +26,22 @@
       border-bottom: 1px solid var(--border-subtle);
       position: relative;
     }
-
     .nav-brand {
       display: flex;
       align-items: center;
       gap: 12px;
     }
-
     .nav-brand-title {
       font-size: clamp(16px, 2vw, 20px);
       font-weight: 700;
       color: var(--text-high);
       text-wrap: balance;
     }
-
     .nav-links {
       display: flex;
       align-items: center;
       gap: 12px;
     }
-
     .hamburger-btn {
       display: none;
       width: 44px;
@@ -60,21 +55,18 @@
       justify-content: center;
       touch-action: manipulation;
     }
-
     /* Grid Layout: 2 Columns on Tablet & Desktop */
     .dashboard-grid {
       display: grid;
       grid-template-columns: 1fr;
       gap: 20px;
     }
-
     @media (min-width: 900px) {
       .dashboard-grid {
         grid-template-columns: 360px 1fr;
         align-items: start;
       }
     }
-
     /* Responsive Data Table for Domain Rules */
     .table-container {
       width: 100%;
@@ -84,19 +76,16 @@
       background: var(--bg-surface);
       margin-top: 12px;
     }
-
     .data-table {
       width: 100%;
       border-collapse: collapse;
       font-size: 12px;
       text-align: left;
     }
-
     .data-table th, .data-table td {
       padding: 12px 14px;
       border-bottom: 1px solid var(--border-subtle);
     }
-
     .data-table th {
       background: var(--bg-surface-elevated);
       color: var(--text-mid);
@@ -105,11 +94,9 @@
       font-size: 10.5px;
       letter-spacing: 0.5px;
     }
-
     .data-table tr:hover td {
       background: rgba(255, 255, 255, 0.02);
     }
-
     .domain-badge {
       display: inline-block;
       font-size: 10.5px;
@@ -118,79 +105,29 @@
       border-radius: var(--radius-full);
       font-family: var(--font-mono);
     }
-
     .domain-badge.whitelist {
       background: var(--emerald-dim);
       color: var(--emerald-primary);
       border: 1px solid rgba(0, 229, 163, 0.3);
     }
-
     .domain-badge.blocked {
       background: var(--paused-dim);
       color: var(--paused-primary);
       border: 1px solid rgba(255, 90, 90, 0.3);
     }
-
-    /* Mobile Table Transformation (<600px): Cards instead of wide rows */
     @media (max-width: 600px) {
       .data-table, .data-table tbody, .data-table tr, .data-table td {
         display: block;
         width: 100%;
       }
-
-      .data-table thead {
-        display: none;
-      }
-
-      .data-table tr {
-        margin-bottom: 10px;
-        background: var(--bg-surface-elevated);
-        border: 1px solid var(--border-subtle);
-        border-radius: var(--radius-sm);
-        padding: 8px;
-      }
-
-      .data-table td {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        padding: 6px 4px;
-        border-bottom: 1px solid rgba(255, 255, 255, 0.04);
-      }
-
-      .data-table td:last-child {
-        border-bottom: none;
-      }
-
-      .data-table td::before {
-        content: attr(data-label);
-        font-weight: 600;
-        color: var(--text-dim);
-        font-size: 10.5px;
-      }
-
-      .hamburger-btn {
-        display: inline-flex;
-      }
-
-      .nav-links {
-        display: none;
-      }
-
-      .nav-links.is-open {
-        display: flex;
-        flex-direction: column;
-        position: absolute;
-        top: 100%;
-        left: 0;
-        right: 0;
-        background: var(--bg-surface-elevated);
-        border: 1px solid var(--border-strong);
-        border-radius: var(--radius-md);
-        padding: 14px;
-        z-index: 100;
-        box-shadow: 0 10px 30px rgba(0,0,0,0.6);
-      }
+      .data-table thead { display: none; }
+      .data-table tr { margin-bottom: 10px; background: var(--bg-surface-elevated); border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); padding: 8px; }
+      .data-table td { display: flex; justify-content: space-between; align-items: center; padding: 6px 4px; border-bottom: 1px solid rgba(255,255,255,0.04); }
+      .data-table td:last-child { border-bottom: none; }
+      .data-table td::before { content: attr(data-label); font-weight: 600; color: var(--text-dim); font-size: 10.5px; }
+      .hamburger-btn { display: inline-flex; }
+      .nav-links { display: none; }
+      .nav-links.is-open { display: flex; flex-direction: column; position: absolute; top: 100%; left: 0; right: 0; background: var(--bg-surface-elevated); border: 1px solid var(--border-strong); border-radius: var(--radius-md); padding: 14px; z-index: 100; box-shadow: 0 10px 30px rgba(0,0,0,0.6); }
     }
   </style>
 </head>
@@ -199,207 +136,67 @@
     <!-- Navigation Header -->
     <header class="dashboard-nav">
       <div class="nav-brand">
-        <div class="brand-icon" aria-hidden="true">
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true">
-            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
-          </svg>
-        </div>
-        <div class="nav-brand-title">My AdBlocker Dashboard</div>
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+        <span class="nav-brand-title">My AdBlocker Dashboard</span>
       </div>
-
-      <button class="hamburger-btn" id="dashMenuBtn" aria-label="Mở menu điều hướng" aria-expanded="false">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-          <line x1="3" y1="12" x2="21" y2="12"/>
-          <line x1="3" y1="6" x2="21" y2="6"/>
-          <line x1="3" y1="18" x2="21" y2="18"/>
-        </svg>
-      </button>
-
-      <nav class="nav-links" id="dashNavLinks" aria-label="Điều hướng chính">
-        <div class="header-status-badge" id="dashStatusBadge" aria-live="polite">Đang chạy</div>
-        <button class="footer-btn reset-btn" id="dashResetStatsBtn" type="button" aria-label="Đặt lại bộ đếm thống kê">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-            <path d="M3 6h18"/>
-            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/>
-          </svg>
-          <span>Xóa đếm</span>
-        </button>
+      <nav class="nav-links" id="dashNavLinks">
+        <button class="hamburger-btn" id="dashMenuBtn" aria-label="Menu"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg></button>
+        <!-- Additional nav links could be added here -->
       </nav>
     </header>
-
-    <!-- Main Grid Content -->
-    <main class="dashboard-grid">
-      <!-- Left Column: Master Shield & Active Protection -->
-      <aside class="dashboard-left" style="display: flex; flex-direction: column; gap: 16px;">
-        <div class="hero-section" id="dashHero">
-          <div class="shield-display" aria-hidden="true">
-            <div class="shield-aura"></div>
-            <div class="shield-core">
-              <svg class="shield-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true">
-                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
-                <polyline points="9 12 11 14 15 10"/>
-              </svg>
-            </div>
+    <!-- Main Content Grid -->
+    <div class="dashboard-grid">
+      <!-- Left Panel: Stats -->
+      <section class="stats-panel">
+        <div class="stat-card">
+          <div class="stat-header">
+            <span class="stat-label">Tổng tích luỹ</span>
+            <svg class="stat-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
           </div>
-
-          <div class="status-meta">
-            <h2 class="status-headline" id="dashHeadline">Bảo vệ đang bật</h2>
-            <p class="status-subtext" id="dashSubtext">Tất cả bộ lọc mạng và quảng cáo đang hoạt động</p>
-          </div>
-
-          <div class="power-control">
-            <label class="master-switch" for="dashMasterToggle" title="Bật hoặc tắt toàn bộ bảo vệ">
-              <input type="checkbox" id="dashMasterToggle" checked aria-label="Bật hoặc tắt toàn bộ bảo vệ">
-              <span class="switch-track">
-                <span class="switch-thumb"></span>
-              </span>
-            </label>
-          </div>
+          <div class="stat-number" id="dashTotalCount" aria-live="polite">0</div>
+          <div class="stat-caption"><span id="dashTrackersCount">0</span> trackers đã chặn</div>
         </div>
-
-        <!-- Filter Controls -->
-        <div class="filters-section">
-          <div class="section-heading">Cấu hình bộ lọc</div>
-
-          <div class="filter-item">
-            <div class="filter-icon-box" aria-hidden="true">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-                <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
-                <line x1="9" y1="9" x2="15" y2="15"/>
-                <line x1="15" y1="9" x2="9" y2="15"/>
-              </svg>
-            </div>
-            <div class="filter-text">
-              <div class="filter-name">Chặn quảng cáo mạng</div>
-              <div class="filter-desc">Google Ads, DoubleClick, popup banners</div>
-            </div>
-            <label class="compact-toggle" for="dashFilterNetwork" title="Chặn quảng cáo mạng">
-              <input type="checkbox" id="dashFilterNetwork" checked aria-label="Chặn quảng cáo mạng">
-              <span class="c-slider"></span>
-            </label>
+        <div class="stat-card">
+          <div class="stat-header">
+            <span class="stat-label">Trình theo dõi</span>
+            <svg class="stat-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 2a10 10 0 0 0-9.95 9.2"/></svg>
           </div>
-
-          <div class="filter-item">
-            <div class="filter-icon-box" aria-hidden="true">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
-                <circle cx="12" cy="12" r="3"/>
-              </svg>
-            </div>
-            <div class="filter-text">
-              <div class="filter-name">Ẩn khung trống (Cosmetic)</div>
-              <div class="filter-desc">Dọn dẹp khoảng trắng do quảng cáo để lại</div>
-            </div>
-            <label class="compact-toggle" for="dashFilterCosmetic" title="Ẩn khung quảng cáo trống">
-              <input type="checkbox" id="dashFilterCosmetic" checked aria-label="Ẩn khung quảng cáo trống">
-              <span class="c-slider"></span>
-            </label>
-          </div>
-
-          <div class="filter-item">
-            <div class="filter-icon-box" aria-hidden="true">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-                <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/>
-                <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
-                <line x1="12" y1="19" x2="12" y2="22"/>
-              </svg>
-            </div>
-            <div class="filter-text">
-              <div class="filter-name">Chặn trình theo dõi ngầm</div>
-              <div class="filter-desc">Telemetry và analytics scripts</div>
-            </div>
-            <label class="compact-toggle" for="dashFilterTrackers" title="Chặn trình theo dõi ngầm">
-              <input type="checkbox" id="dashFilterTrackers" checked aria-label="Chặn trình theo dõi ngầm">
-              <span class="c-slider"></span>
-            </label>
-          </div>
+          <div class="stat-number" id="dashTrackersCount" aria-live="polite">0</div>
         </div>
-      </aside>
-
-      <!-- Right Column: Analytics & Responsive Data Table -->
-      <section class="dashboard-right" style="display: flex; flex-direction: column; gap: 20px;">
-        <!-- Metrics -->
-        <div class="metrics-grid" style="grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));">
-          <div class="metric-card">
-            <div class="metric-header">
-              <span class="metric-label">Tổng đã chặn</span>
-              <span class="metric-pulse" aria-hidden="true"></span>
-            </div>
-            <div class="metric-number" id="dashTotalCount" aria-live="polite">0</div>
-            <div class="metric-caption">toàn thời gian</div>
+        <div class="stat-card">
+          <div class="stat-header">
+            <span class="stat-label">Quảng cáo</span>
+            <svg class="stat-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M5 12h14"/></svg>
           </div>
-
-          <div class="metric-card">
-            <div class="metric-header">
-              <span class="metric-label">Trackers</span>
-              <svg class="metric-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-                <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/>
-              </svg>
-            </div>
-            <div class="metric-number" id="dashTrackersCount" aria-live="polite">0</div>
-            <div class="metric-caption">bảo vệ quyền riêng tư</div>
-          </div>
-
-          <div class="metric-card">
-            <div class="metric-header">
-              <span class="metric-label">Quảng cáo mạng</span>
-              <svg class="metric-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-                <rect x="3" y="3" width="18" height="18" rx="2"/>
-              </svg>
-            </div>
-            <div class="metric-number" id="dashAdsCount" aria-live="polite">0</div>
-            <div class="metric-caption">yêu cầu banner</div>
-          </div>
-        </div>
-
-        <!-- Domain Rules Table Card -->
-        <div class="domains-manager-section" style="padding: 16px;">
-          <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; margin-bottom: 12px;">
-            <div class="domains-manager-title" style="font-size: 14px;">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-                <polygon points="12 2 2 7 12 12 22 7 12 2"/>
-                <polyline points="2 17 12 22 22 17"/>
-                <polyline points="2 12 12 17 22 12"/>
-              </svg>
-              Quản lý quy tắc tên miền
-            </div>
-
-            <!-- Tabs -->
-            <div class="domain-tabs" style="margin: 0; min-width: 240px;">
-              <button class="domain-tab is-active" id="dashTabWhitelistBtn" type="button">Whitelist (<span id="dashWhitelistCount">0</span>)</button>
-              <button class="domain-tab" id="dashTabCustomBlockBtn" type="button">Chặn thêm (<span id="dashCustomBlockCount">0</span>)</button>
-            </div>
-          </div>
-
-          <!-- Add Form -->
-          <div class="domain-input-group" style="margin-bottom: 12px;">
-            <input type="text" id="dashDomainInput" class="domain-input" placeholder="Nhập tên miền (vd: dantri.com.vn)…" aria-label="Tên miền">
-            <button class="domain-add-btn" id="dashAddDomainBtn" type="button" aria-label="Thêm vào danh sách">+ Thêm vào danh sách</button>
-          </div>
-          <div class="domain-input-error" id="dashDomainError" style="display: none;" role="alert"></div>
-
-          <!-- Responsive Data Table / Mobile Card Stack -->
-          <div class="table-container">
-            <table class="data-table">
-              <thead>
-                <tr>
-                  <th scope="col">Tên miền</th>
-                  <th scope="col">Phân loại</th>
-                  <th scope="col">Hành động bảo vệ</th>
-                  <th scope="col" style="text-align: right;">Thao tác</th>
-                </tr>
-              </thead>
-              <tbody id="dashTableBody">
-                <!-- Rendered dynamically -->
-              </tbody>
-            </table>
-            <div class="domain-empty" id="dashEmptyState">Chưa có tên miền nào trong danh sách.</div>
-          </div>
+          <div class="stat-number" id="dashAdsCount" aria-live="polite">0</div>
         </div>
       </section>
-    </main>
+      <!-- Right Panel: Domain Table -->
+      <section class="domains-panel">
+        <div class="table-container">
+          <table class="data-table" id="dashTable">
+            <thead>
+              <tr>
+                <th data-label="Tên miền">Tên miền</th>
+                <th data-label="Phân loại">Phân loại</th>
+                <th data-label="Hành động">Hành động</th>
+                <th data-label="Thao tác">Thao tác</th>
+              </tr>
+            </thead>
+            <tbody id="dashTableBody"></tbody>
+          </table>
+          <div class="empty-state" id="dashEmptyState" style="display:none;">Không có tên miền nào.</div>
+        </div>
+        <div class="domain-input-section">
+          <input type="text" id="dashDomainInput" placeholder="Nhập tên miền (vd: example.com)…" aria-label="Tên miền">
+          <button id="dashAddDomainBtn" type="button">Thêm</button>
+          <div class="error" id="dashDomainError" style="display:none;" role="alert"></div>
+        </div>
+      </section>
+    </div>
   </div>
-
+  <!-- Load shared API before dashboard script -->
+  <script src="shared/api.js"></script>
   <script src="dashboard.js"></script>
 </body>
 </html>
